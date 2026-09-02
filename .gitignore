@@ -1,0 +1,18 @@
+# Local source data
+data/raw/*
+!data/raw/.gitkeep
+
+# Processed/generated data
+data/processed/*
+!data/processed/.gitkeep
+
+# Power BI working files
+*.pbix
+
+# SQL Server database files
+*.mdf
+*.ldf
+
+# Windows
+Thumbs.db
+Desktop.ini
