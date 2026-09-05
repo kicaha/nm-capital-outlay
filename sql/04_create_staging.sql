@@ -20,6 +20,7 @@ CREATE TABLE Staging.Project (
     AgencyCode varchar(10),
     StatusFlag varchar(10),
     ProjectTotalAfterVetoes int,
+    SourcePage int,
     CONSTRAINT PK_Staging_Project
         PRIMARY KEY (StageProjectID)
 );
@@ -31,6 +32,7 @@ CREATE TABLE Staging.Appropriation (
     WebID int,
     Sponsor nvarchar(100),
     Amount int,
+    SourcePage int,
     CONSTRAINT PK_Staging_Appropriation
         PRIMARY KEY (StageAppropriationID)
 );

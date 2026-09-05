@@ -1,7 +1,3 @@
-# Local source data
-data/raw/*
-!data/raw/.gitkeep
-
 # Processed/generated data
 data/processed/*
 !data/processed/.gitkeep
