@@ -28,7 +28,7 @@ CREATE TABLE #AppropriationLanding (
 
 -- Load data from csv
 BULK INSERT #ProjectLanding
-FROM 'C:\SQLData\HB450_2025_Las_Cruces_projects.csv'
+FROM 'C:\SQLData\HB450_2025_Statewide_projects.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,
@@ -37,7 +37,7 @@ WITH (
 );
 
 BULK INSERT #AppropriationLanding
-FROM 'C:\SQLData\HB450_2025_Las_Cruces_appropriations.csv'
+FROM 'C:\SQLData\HB450_2025_Statewide_appropriations.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,
@@ -152,6 +152,7 @@ JOIN Staging.Project AS P
     ON P.LegislativeYear = A.LegislativeYear
     AND P.Bill = A.Bill
     AND P.WebID = A.WebID
+WHERE P.StatusFlag <> 'VETO'
 GROUP BY P.LegislativeYear, P.Bill, P.WebID, P.ProjectTotalAfterVetoes, P.StatusFlag
 HAVING SUM(A.Amount) <> P.ProjectTotalAfterVetoes;
 
