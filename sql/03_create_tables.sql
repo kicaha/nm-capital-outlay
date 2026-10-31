@@ -148,7 +148,7 @@ CREATE TABLE CapitalOutlay.Appropriation (
     AppropriationID int IDENTITY(1,1) NOT NULL,
     LegislativeProjectID int NOT NULL,
     SponsorID int NULL,
-    SourceSponsorLabel nvarchar(100) NOT NULL,
+    SourceSponsorLabel nvarchar(100) NULL,
     Amount int NOT NULL,
     CONSTRAINT PK_CapitalOutlay_Appropriation
         PRIMARY KEY (AppropriationID),
