@@ -7,6 +7,10 @@
 -- Set the database to NMCapitalOutlay
 USE NMCapitalOutlay;
 
+/* ============================================================
+   1. CREATE CAPITAL OUTLAY TABLES
+   ============================================================ */
+
 /*
 This table contains the individual and institutional sponsors identified from the annual NMLegis.gov legislator lists.
 Constraints include that the primary key is the SponsorID and that SponsorType must be one of the two identified values.
@@ -157,6 +161,67 @@ CREATE TABLE CapitalOutlay.Appropriation (
 );
 
 /*
+This table provides a way to map source Sponsor labels to resolved Sponsors, ensuring that
+variations of a Sponsor's name can be associated with a single SponsorID.
+
+This may include Sponsors with potentially ambiguous names (e.g. Baca), Sponsors whose names
+change over time (Brantley --> Crystal Brantley), or variations in spelling
+(Munoz --> Muñoz).
+
+Aliases are only added to this table once the SponsorID associated with the source label has
+been resolved.
+
+IsAutoResolvable is a binary flag indicating whether the alias can be safely resolved by the
+ETL process or whether an occurrence should be flagged for manual review. The default is 0
+(manual review required).
+
+SourceSponsorLabel is unique because each exact source label has only one current resolution.
+If a resolution becomes questionable, IsAutoResolvable should be reset to 0 while the mapping
+is reviewed.
+
+The primary key is SponsorAliasID.
+*/
+CREATE TABLE CapitalOutlay.SponsorAlias (
+    SponsorAliasID int IDENTITY(1,1) NOT NULL,
+    SourceSponsorLabel nvarchar(100) NOT NULL,
+    SponsorID int NOT NULL,
+    IsAutoResolvable bit NOT NULL
+        CONSTRAINT DF_CapitalOutlay_SponsorAlias_IsAutoResolvable DEFAULT 0,
+    CONSTRAINT PK_CapitalOutlay_SponsorAlias
+        PRIMARY KEY (SponsorAliasID),
+    CONSTRAINT FK_CapitalOutlay_SponsorAlias_Sponsor
+        FOREIGN KEY (SponsorID)
+            REFERENCES CapitalOutlay.Sponsor(SponsorID),
+    CONSTRAINT UQ_CapitalOutlay_SponsorAlias_SourceSponsorLabel
+        UNIQUE(SourceSponsorLabel)
+);
+
+CREATE TABLE CapitalOutlay.SponsorRosterResolution (
+    ResolutionID int IDENTITY(1,1) NOT NULL,
+    ServiceYear smallint NOT NULL,
+    GivenName nvarchar(100) NOT NULL,
+    LastName nvarchar(100) NOT NULL,
+    NameInitial nvarchar(20) NULL,
+    OfficeType varchar(25) NOT NULL,
+    District smallint NOT NULL,
+    ApprovedSponsorID int NOT NULL,
+    ApprovedBy nvarchar(100) NOT NULL,
+    ApprovedDate date NOT NULL,
+    ResolutionNote nvarchar(255) NOT NULL,
+    CONSTRAINT PK_CapitalOutlay_SponsorRosterResolution
+        PRIMARY KEY (ResolutionID),
+    CONSTRAINT FK_CapitalOutlay_SponsorRosterResolution_Sponsor
+        FOREIGN KEY (ApprovedSponsorID)
+            REFERENCES CapitalOutlay.Sponsor(SponsorID),
+    CONSTRAINT UK_CapitalOutlay_SponsorRosterResolution
+        UNIQUE (ServiceYear, GivenName, LastName,NameInitial, OfficeType, District)
+);
+
+/* ============================================================
+   2. CREATE STAGING TABLES
+   ============================================================ */
+
+/*
 This table is an intermediate step for importing project information from the original source
 into the normalized tables.
 
@@ -224,42 +289,6 @@ CREATE TABLE Staging.Appropriation (
 );
 
 /*
-This table provides a way to map source Sponsor labels to resolved Sponsors, ensuring that
-variations of a Sponsor's name can be associated with a single SponsorID.
-
-This may include Sponsors with potentially ambiguous names (e.g. Baca), Sponsors whose names
-change over time (Brantley --> Crystal Brantley), or variations in spelling
-(Munoz --> Muñoz).
-
-Aliases are only added to this table once the SponsorID associated with the source label has
-been resolved.
-
-IsAutoResolvable is a binary flag indicating whether the alias can be safely resolved by the
-ETL process or whether an occurrence should be flagged for manual review. The default is 0
-(manual review required).
-
-SourceSponsorLabel is unique because each exact source label has only one current resolution.
-If a resolution becomes questionable, IsAutoResolvable should be reset to 0 while the mapping
-is reviewed.
-
-The primary key is SponsorAliasID.
-*/
-CREATE TABLE CapitalOutlay.SponsorAlias (
-    SponsorAliasID int IDENTITY(1,1) NOT NULL,
-    SourceSponsorLabel nvarchar(100) NOT NULL,
-    SponsorID int NOT NULL,
-    IsAutoResolvable bit NOT NULL
-        CONSTRAINT DF_CapitalOutlay_SponsorAlias_IsAutoResolvable DEFAULT 0,
-    CONSTRAINT PK_CapitalOutlay_SponsorAlias
-        PRIMARY KEY (SponsorAliasID),
-    CONSTRAINT FK_CapitalOutlay_SponsorAlias_Sponsor
-        FOREIGN KEY (SponsorID)
-            REFERENCES CapitalOutlay.Sponsor(SponsorID),
-    CONSTRAINT UQ_CapitalOutlay_SponsorAlias_SourceSponsorLabel
-        UNIQUE(SourceSponsorLabel),
-);
-
-/*
 This is a holding table for projects that are ambiguous or fail validation. Projects can be moved here
 from either the #Landing or Staging phases when they cannot safely proceed to the next ETL stage.
 
@@ -286,7 +315,7 @@ CREATE TABLE Staging.HeldProject (
     County nvarchar(250) NULL,
     ProjectTitle nvarchar(500) NULL,
     CONSTRAINT PK_Staging_HeldProject
-        PRIMARY KEY (HeldProjectID),
+        PRIMARY KEY (HeldProjectID)
 );
 
 /*
@@ -297,7 +326,7 @@ The reason an appropriation is held is recorded in the ValidationIssue table.
 
 Appropriations in this table will undergo validation again once they have been manually reviewed and resolved.
 
-Primary key is HeldAppropriationID.
+Primary key is HeldAppropriationID, HeldDate is auto-generated with the current date when a row is added.
 */
 CREATE TABLE Staging.HeldAppropriation (
     HeldAppropriationID int IDENTITY(1,1) NOT NULL,
@@ -338,5 +367,5 @@ CREATE TABLE Staging.ValidationIssue (
             REFERENCES Staging.HeldAppropriation(HeldAppropriationID),
     CONSTRAINT CK_Staging_ValidationIssue_HeldRecord
         CHECK ((HeldProjectID IS NULL AND HeldAppropriationID IS NOT NULL) OR
-            (HeldProjectID IS NOT NULL AND HeldAppropriationID IS NULL)),
+            (HeldProjectID IS NOT NULL AND HeldAppropriationID IS NULL))
 );
