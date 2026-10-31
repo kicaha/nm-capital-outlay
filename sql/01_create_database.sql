@@ -4,6 +4,10 @@
     Purpose: Create the project database if it does not already exist.
 */
 
+/* ============================================================
+   1. CREATE DATABASE IF IT DOESN'T ALREADY EXIST
+   ============================================================ */
+
 -- Start with the system database in case NMCapitalOutlay has not yet been created 
 USE master;
 
