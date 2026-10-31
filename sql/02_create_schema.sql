@@ -7,6 +7,10 @@
 -- Set the database to NMCapitalOutlay
 USE NMCapitalOutlay;
 
+/* ============================================================
+   1. CREATE SCHEMAS IF THEY DO NOT ALREADY EXIST
+   ============================================================ */
+
 /*If the CapitalOutlay schema does not exist (IS NULL) create it
 NOTE: EXEC('CREATE SCHEMA CapitalOutlay') is due to batch restrictions on the CREATE SCHEMA statement
 where it must be the first statement in a batch. Buried in the IF statement here, it cannot be so
