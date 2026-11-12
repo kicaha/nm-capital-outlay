@@ -6,7 +6,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @ServiceYear smallint = 2021;
+DECLARE @ServiceYear smallint = 2022;
 
 
 /* ============================================================
@@ -44,7 +44,7 @@ CREATE TABLE #SponsorRosterLanding (
     not by the CSV header names.
 */
 BULK INSERT #SponsorRosterLanding
-FROM 'C:\SQLData\2021Legislators.csv'
+FROM 'C:\SQLData\2022Legislators.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,

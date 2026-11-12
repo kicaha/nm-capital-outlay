@@ -33,7 +33,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @LegislativeYear smallint = 2021;
+DECLARE @LegislativeYear smallint = 2022;
 
 /* ============================================================
    0. CLEAR INTERMEDIATE TABLES
@@ -99,7 +99,7 @@ CREATE TABLE #AppropriationLanding (
     not by the CSV header names.
 */
 BULK INSERT #AppropriationLanding
-FROM 'C:\SQLData\HB285_2021_Statewide_appropriations.csv'
+FROM 'C:\SQLData\SB212_2022_Statewide_appropriations.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,

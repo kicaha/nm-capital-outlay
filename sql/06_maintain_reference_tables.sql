@@ -38,7 +38,7 @@ CREATE TABLE #Landing (
 );
 
 BULK INSERT #Landing
-FROM 'C:\SQLData\HB285_2021_Statewide_projects.csv' -- Change filename as needed
+FROM 'C:\SQLData\SB212_2022_Statewide_projects.csv' -- Change filename as needed
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,
@@ -174,7 +174,7 @@ CREATE TABLE #AppropriationReferenceLanding (
 );
 
 BULK INSERT #AppropriationReferenceLanding
-FROM 'C:\SQLData\HB285_2021_Statewide_appropriations.csv' -- Change filename as needed
+FROM 'C:\SQLData\SB212_2022_Statewide_appropriations.csv' -- Change filename as needed
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,
