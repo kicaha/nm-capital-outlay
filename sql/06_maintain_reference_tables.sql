@@ -50,70 +50,93 @@ WITH (
    ============================================================ */
 
 /*
-    These queries are to see if any new codes are found
-    in the #Landing table that are not found in the 
-    reference tables yet.
+    Identify Fund and Agency codes present in the annual project
+    source that do not yet exist in the normalized reference tables.
+
+    FundCode and AgencyCode come directly from the project source.
+    Unlike Sponsor identity, these codes do not require identity
+    resolution before they can be added.
+
+    The source file does not provide FundName or AgencyName, so new
+    reference records are created with the name left NULL.
 */
 
 SELECT DISTINCT L.FundCode
 FROM #Landing AS L
 LEFT JOIN CapitalOutlay.Fund AS F
     ON L.FundCode = F.FundCode
-WHERE F.FundCode IS NULL;
+WHERE F.FundID IS NULL
+ORDER BY L.FundCode;
 
 SELECT DISTINCT L.AgencyCode
 FROM #Landing AS L
 LEFT JOIN CapitalOutlay.Agency AS A
     ON L.AgencyCode = A.AgencyCode
-WHERE A.AgencyCode IS NULL;
+WHERE A.AgencyID IS NULL
+ORDER BY L.AgencyCode;
+
 
 /* ============================================================
    3. INSERT MISSING CODES
    ============================================================ */
 
 /*
-    Review all codes returned above before inserting them.
+    Add reference codes found in the annual source that do not yet
+    exist in Fund or Agency.
 
-    After confirming that a new code is legitimate, manually insert it
-    into the appropriate reference table using the structure below.
-    Replace the placeholder values before execution.
-
-    To insert Funds or Agencies, uncomment the code below, modify as needed
-    and run that section. 
+    These INSERT statements are safe to rerun because NOT EXISTS
+    prevents an existing code from being inserted again.
 */
 
--- Code for inserting Funds
-/*
-INSERT INTO CapitalOutlay.Fund (
-    FundCode,
-    FundName
-)
-VALUES
-    ('CODE01', NULL),
-    ('CODE02', NULL);
-*/
+INSERT INTO CapitalOutlay.Fund (FundCode, FundName)
+SELECT DISTINCT
+    L.FundCode,
+    NULL
+FROM #Landing AS L
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM CapitalOutlay.Fund AS F
+    WHERE F.FundCode = L.FundCode
+);
 
--- Code for inserting Agencies
-/*
-INSERT INTO CapitalOutlay.Agency (
-    AgencyCode,
-    AgencyName
-)
-VALUES
-    ('CODE01', NULL),
-    ('CODE02', NULL);
-*/
+INSERT INTO CapitalOutlay.Agency (AgencyCode, AgencyName)
+SELECT DISTINCT
+    L.AgencyCode,
+    NULL
+FROM #Landing AS L
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM CapitalOutlay.Agency AS A
+    WHERE A.AgencyCode = L.AgencyCode
+);
+
 
 /* ============================================================
-   4. VERIFY
+   4. VERIFY REFERENCE CODES
    ============================================================ */
 
 /*
-    After inserting all approved codes, rerun the queries in Section 2.
+    Both queries should return zero rows after Section 3.
 
-    Both queries should return zero rows before proceeding with the
-    project load.
+    Any returned row indicates that a source code still does not have
+    a corresponding normalized reference record and should be
+    investigated before running 07_load_projects.sql.
 */
+
+SELECT DISTINCT L.FundCode
+FROM #Landing AS L
+LEFT JOIN CapitalOutlay.Fund AS F
+    ON L.FundCode = F.FundCode
+WHERE F.FundID IS NULL
+ORDER BY L.FundCode;
+
+SELECT DISTINCT L.AgencyCode
+FROM #Landing AS L
+LEFT JOIN CapitalOutlay.Agency AS A
+    ON L.AgencyCode = A.AgencyCode
+WHERE A.AgencyID IS NULL
+ORDER BY L.AgencyCode;
+
 
 /* ============================================================
    5. MAINTAIN SPONSOR ALIASES
@@ -123,48 +146,21 @@ VALUES
     Appropriation source data identifies sponsors using source labels
     that may not exactly match normalized Sponsor records.
 
-    SponsorAlias is the controlled mapping between an exact source
-    label and an established Sponsor record.
+    This section automatically creates an alias only when an exact
+    source label matches exactly one Sponsor in the normalized Sponsor
+    table AND that Sponsor has SponsorService in the appropriation year.
+    Because SponsorAlias is global rather than year-specific, labels that
+    match multiple Sponsors overall are not auto-resolved even if only
+    one of them served in the current year.
 
-    The appropriation source may identify legitimate sponsors who are
-    not present in Sponsor. The annual legislator roster is therefore
-    not treated as a complete authority for every sponsor appearing in
-    appropriation data.
-
-    Maintenance process:
-
-        1. Land the annual appropriation source.
-        2. Identify source labels that do not yet have an alias.
-        3. Review possible existing Sponsor matches.
-        4. Review labels with no existing Sponsor candidate.
-        5. Create missing Sponsor records only when identity is known.
-        6. Create approved SponsorAlias mappings.
-        7. Verify the remaining unresolved labels.
-        8. Optionally apply newly approved aliases to appropriations
-           that were loaded before the alias existed.
-
-    IsAutoResolvable = 1 means the exact source label can safely and
-    consistently resolve to the selected Sponsor.
-
-    IsAutoResolvable = 0 retains a reviewed relationship without
-    allowing automatic SponsorID assignment.
-
-    An unresolved nonblank Sponsor label does NOT invalidate an
-    appropriation. 08_load_appropriations.sql preserves the source
-    label and loads SponsorID as NULL.
-
-    Blank Sponsor values are valid source data and require no alias.
+    Labels with zero or multiple year-valid candidates remain unresolved
+    for human review. Blank Sponsor values are valid and require no alias.
 */
 
 
 /* ------------------------------------------------------------
    5A. LAND APPROPRIATION SPONSOR DATA
    ------------------------------------------------------------ */
-
-/*
-    This landing table exists only for Sponsor reference maintenance.
-    Full appropriation validation occurs in 08_load_appropriations.sql.
-*/
 
 DROP TABLE IF EXISTS #AppropriationReferenceLanding;
 
@@ -188,81 +184,124 @@ WITH (
 
 
 /* ------------------------------------------------------------
-   5B. IDENTIFY UNMAPPED SOURCE SPONSOR LABELS
+   5B. BUILD YEAR-VALID SPONSOR CANDIDATES
    ------------------------------------------------------------ */
 
-SELECT
+DROP TABLE IF EXISTS #SponsorCandidates;
+
+SELECT DISTINCT
+    TRY_CONVERT(smallint, TRIM(L.LegislativeYear)) AS LegislativeYear,
     TRIM(L.Sponsor) AS SourceSponsorLabel,
-    COUNT(*) AS AppropriationCount
+    S.SponsorID,
+    S.DisplayName,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM CapitalOutlay.SponsorService AS SS
+        WHERE SS.SponsorID = S.SponsorID
+          AND SS.ServiceYear = TRY_CONVERT(smallint, TRIM(L.LegislativeYear))
+    ) THEN 1 ELSE 0 END AS ServesInSourceYear
+INTO #SponsorCandidates
 FROM #AppropriationReferenceLanding AS L
-LEFT JOIN CapitalOutlay.SponsorAlias AS SA
-    ON TRIM(L.Sponsor) = SA.SourceSponsorLabel
-WHERE NULLIF(TRIM(L.Sponsor), '') IS NOT NULL
-  AND SA.SponsorAliasID IS NULL
-GROUP BY
-    TRIM(L.Sponsor)
-ORDER BY
-    AppropriationCount DESC,
-    SourceSponsorLabel;
+INNER JOIN CapitalOutlay.Sponsor AS S
+    ON TRIM(L.Sponsor) = S.LastName
+    OR TRIM(L.Sponsor) = S.DisplayName
+WHERE NULLIF(TRIM(L.Sponsor), '') IS NOT NULL;
 
 
 /* ------------------------------------------------------------
-   5C. FIND POSSIBLE EXISTING SPONSOR MATCHES
+   5C. CREATE SAFE AUTOMATIC ALIASES
    ------------------------------------------------------------ */
 
 /*
-    CandidateCount shows whether a source label has one or multiple
-    possible existing Sponsor matches. These are review candidates
-    only; this query does not create aliases automatically.
+    An alias is created only when the source label has exactly one
+    year-valid Sponsor candidate in the landed appropriation source.
+
+    Existing aliases are never overwritten.
 */
 
-WITH CandidateMatches AS (
-    SELECT DISTINCT
-        TRIM(L.Sponsor) AS SourceSponsorLabel,
-        S.SponsorID,
-        S.GivenName,
-        S.LastName,
-        S.DisplayName,
-        S.SponsorType
-    FROM #AppropriationReferenceLanding AS L
-    LEFT JOIN CapitalOutlay.SponsorAlias AS SA
-        ON TRIM(L.Sponsor) = SA.SourceSponsorLabel
-    INNER JOIN CapitalOutlay.Sponsor AS S
-        ON TRIM(L.Sponsor) = S.LastName
-        OR TRIM(L.Sponsor) = S.DisplayName
-    WHERE NULLIF(TRIM(L.Sponsor), '') IS NOT NULL
-      AND SA.SponsorAliasID IS NULL
+WITH CandidateCounts AS (
+    SELECT
+        SourceSponsorLabel,
+        COUNT(DISTINCT SponsorID) AS CandidateCount
+    FROM #SponsorCandidates
+    GROUP BY
+        SourceSponsorLabel
+),
+UniqueCandidates AS (
+    SELECT
+        C.SourceSponsorLabel,
+        C.SponsorID
+    FROM #SponsorCandidates AS C
+    INNER JOIN CandidateCounts AS CC
+        ON C.SourceSponsorLabel = CC.SourceSponsorLabel
+    WHERE CC.CandidateCount = 1
+      AND C.ServesInSourceYear = 1
+)
+INSERT INTO CapitalOutlay.SponsorAlias (
+    SourceSponsorLabel,
+    SponsorID,
+    IsAutoResolvable
+)
+SELECT DISTINCT
+    U.SourceSponsorLabel,
+    U.SponsorID,
+    1
+FROM UniqueCandidates AS U
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM CapitalOutlay.SponsorAlias AS SA
+    WHERE SA.SourceSponsorLabel = U.SourceSponsorLabel
+);
+
+
+/* ------------------------------------------------------------
+   5D. REVIEW AMBIGUOUS YEAR-VALID MATCHES
+   ------------------------------------------------------------ */
+
+/*
+    Returned labels have more than one Sponsor candidate serving in
+    the source year. They are intentionally not auto-resolved.
+*/
+
+WITH CandidateCounts AS (
+    SELECT
+        SourceSponsorLabel,
+        COUNT(DISTINCT SponsorID) AS CandidateCount
+    FROM #SponsorCandidates
+    GROUP BY
+        SourceSponsorLabel
 )
 SELECT
+    C.LegislativeYear,
     C.SourceSponsorLabel,
     C.SponsorID,
-    C.GivenName,
-    C.LastName,
     C.DisplayName,
-    C.SponsorType,
-    COUNT(*) OVER (
-        PARTITION BY C.SourceSponsorLabel
-    ) AS CandidateCount
-FROM CandidateMatches AS C
+    C.ServesInSourceYear,
+    CC.CandidateCount
+FROM #SponsorCandidates AS C
+INNER JOIN CandidateCounts AS CC
+    ON C.SourceSponsorLabel = CC.SourceSponsorLabel
+LEFT JOIN CapitalOutlay.SponsorAlias AS SA
+    ON C.SourceSponsorLabel = SA.SourceSponsorLabel
+WHERE CC.CandidateCount > 1
+  AND SA.SponsorAliasID IS NULL
 ORDER BY
     C.SourceSponsorLabel,
     C.DisplayName;
 
 
 /* ------------------------------------------------------------
-   5D. IDENTIFY LABELS WITH NO EXISTING SPONSOR CANDIDATE
+   5E. REVIEW REMAINING UNRESOLVED LABELS
    ------------------------------------------------------------ */
 
 /*
-    Human review determines whether each returned label represents:
-        1. an existing Sponsor with different source formatting;
-        2. a legitimate missing Person or Institutional Sponsor; or
-        3. an identity that should remain unresolved.
-
-    Do not create a Sponsor merely to eliminate an unresolved label.
+    These labels were not safe for automatic alias creation. They may
+    have no Sponsor candidate, multiple Sponsor candidates, or a single
+    candidate who did not serve in the source year.
 */
 
 SELECT
+    TRY_CONVERT(smallint, TRIM(L.LegislativeYear)) AS LegislativeYear,
     TRIM(L.Sponsor) AS SourceSponsorLabel,
     COUNT(*) AS AppropriationCount
 FROM #AppropriationReferenceLanding AS L
@@ -270,13 +309,8 @@ LEFT JOIN CapitalOutlay.SponsorAlias AS SA
     ON TRIM(L.Sponsor) = SA.SourceSponsorLabel
 WHERE NULLIF(TRIM(L.Sponsor), '') IS NOT NULL
   AND SA.SponsorAliasID IS NULL
-  AND NOT EXISTS (
-        SELECT 1
-        FROM CapitalOutlay.Sponsor AS S
-        WHERE TRIM(L.Sponsor) = S.LastName
-           OR TRIM(L.Sponsor) = S.DisplayName
-  )
 GROUP BY
+    TRY_CONVERT(smallint, TRIM(L.LegislativeYear)),
     TRIM(L.Sponsor)
 ORDER BY
     AppropriationCount DESC,
@@ -284,15 +318,14 @@ ORDER BY
 
 
 /* ------------------------------------------------------------
-   5E. CREATE A MISSING SPONSOR WHEN REQUIRED
+   5F. HUMAN-REVIEW TEMPLATES
    ------------------------------------------------------------ */
 
 /*
-    Use these templates only after human review establishes that the
-    source label represents a legitimate Sponsor who does not already
-    exist in CapitalOutlay.Sponsor.
+    Use only when review establishes a mapping that cannot be created
+    automatically above.
 
-    PERSON TEMPLATE:
+    MISSING SPONSOR TEMPLATE:
 
     INSERT INTO CapitalOutlay.Sponsor (
         GivenName, LastName, SponsorType, DisplayName
@@ -301,25 +334,7 @@ ORDER BY
         'Given Name', 'Last Name', 'Person', 'Display Name'
     );
 
-    INSTITUTIONAL TEMPLATE:
-
-    INSERT INTO CapitalOutlay.Sponsor (
-        GivenName, LastName, SponsorType, DisplayName
-    )
-    VALUES (
-        NULL, NULL, 'Institutional', 'Institutional Sponsor Name'
-    );
-*/
-
-
-/* ------------------------------------------------------------
-   5F. CREATE APPROVED SPONSOR ALIASES
-   ------------------------------------------------------------ */
-
-/*
-    Insert only human-reviewed mappings.
-
-    SINGLE-ALIAS TEMPLATE:
+    APPROVED ALIAS TEMPLATE:
 
     INSERT INTO CapitalOutlay.SponsorAlias (
         SourceSponsorLabel, SponsorID, IsAutoResolvable
@@ -327,30 +342,12 @@ ORDER BY
     VALUES (
         'SOURCE LABEL', 123, 1
     );
-
-    MULTIPLE-ALIAS TEMPLATE:
-
-    INSERT INTO CapitalOutlay.SponsorAlias (
-        SourceSponsorLabel, SponsorID, IsAutoResolvable
-    )
-    VALUES
-        ('SOURCE LABEL 1', 123, 1),
-        ('SOURCE LABEL 2', 456, 1);
-
-    IsAutoResolvable = 0 may retain a reviewed relationship without
-    allowing automatic SponsorID assignment.
 */
 
 
 /* ------------------------------------------------------------
    5G. VERIFY REMAINING UNMAPPED SPONSOR LABELS
    ------------------------------------------------------------ */
-
-/*
-    Remaining rows do not block the appropriation load. The source
-    label is retained and SponsorID remains NULL until an approved
-    mapping becomes available.
-*/
 
 SELECT
     TRIM(L.Sponsor) AS SourceSponsorLabel,
@@ -368,21 +365,8 @@ ORDER BY
 
 
 /* ------------------------------------------------------------
-   5H. APPLY NEWLY APPROVED ALIASES TO EXISTING APPROPRIATIONS
+   5H. APPLY AUTO-RESOLVABLE ALIASES TO EXISTING APPROPRIATIONS
    ------------------------------------------------------------ */
-
-/*
-    Needed only when aliases are approved AFTER appropriations have
-    already been loaded.
-
-    Safe to rerun:
-        - only NULL SponsorID values are populated;
-        - existing Sponsor assignments are not overwritten;
-        - only IsAutoResolvable = 1 aliases are applied.
-
-    During a clean annual load, aliases established here are used by
-    08_load_appropriations.sql, so this UPDATE may affect zero rows.
-*/
 
 UPDATE A
 SET A.SponsorID = SA.SponsorID
@@ -396,10 +380,6 @@ WHERE A.SponsorID IS NULL
 /* ------------------------------------------------------------
    5I. SPONSOR RESOLUTION SUMMARY
    ------------------------------------------------------------ */
-
-/*
-    Read-only summary of normalized appropriation Sponsor status.
-*/
 
 SELECT
     P.LegislativeYear,

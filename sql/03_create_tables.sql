@@ -260,8 +260,8 @@ CREATE TABLE Staging.Project (
 This table is an intermediate step for importing project appropriations from the original source
 into the normalized tables.
 
-Staging.Appropriation requires the project business key (LegislativeYear, Bill, WebID), Sponsor,
-and Amount to be NOT NULL. Only SourcePage is allowed to be NULL in this table.
+Staging.Appropriation requires the project business key (LegislativeYear, Bill, WebID), 
+and Amount to be NOT NULL. Only SourcePage and Sponsor are allowed to be NULL in this table.
 
 Sponsor preserves the sponsor label from the source data. Sponsor identity does not need to be
 resolved before a record enters Staging; SponsorID resolution occurs when records are moved to
@@ -281,7 +281,7 @@ CREATE TABLE Staging.Appropriation (
     LegislativeYear smallint NOT NULL,
     Bill varchar(10) NOT NULL,
     WebID int NOT NULL,
-    Sponsor nvarchar(100) NOT NULL,
+    Sponsor nvarchar(100) NULL,
     Amount int NOT NULL,
     SourcePage int NULL,
     CONSTRAINT PK_Staging_Appropriation

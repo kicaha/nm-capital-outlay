@@ -46,14 +46,28 @@ DECLARE @LegislativeYear smallint = 2021;
     project issues, so only appropriation-related issues are removed.
 */
 
+/* ============================================================
+   CLEAR PRIOR HELD APPROPRIATION RESULTS FOR THIS YEAR
+   ============================================================ */
+
+/*
+    Held records are persistent exception history.
+
+    When a year is rerun, replace only that year's held appropriation
+    results. Exceptions from other legislative years are retained.
+
+    ValidationIssue must be deleted first because it references
+    HeldAppropriation.
+*/
+
 DELETE VI
 FROM Staging.ValidationIssue AS VI
-WHERE VI.HeldAppropriationID IS NOT NULL;
+INNER JOIN Staging.HeldAppropriation AS HA
+    ON VI.HeldAppropriationID = HA.HeldAppropriationID
+WHERE TRY_CONVERT(smallint, HA.LegislativeYear) = @LegislativeYear;
 
-DELETE FROM Staging.HeldAppropriation;
-
-TRUNCATE TABLE Staging.Appropriation;
-
+DELETE FROM Staging.HeldAppropriation
+WHERE TRY_CONVERT(smallint, LegislativeYear) = @LegislativeYear;
 /* ============================================================
    1. LAND APPROPRIATION DATA
    ============================================================ */
