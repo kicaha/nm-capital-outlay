@@ -6,7 +6,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @ServiceYear smallint = 2022;
+DECLARE @ServiceYear smallint = 2023;
 
 
 /* ============================================================
@@ -44,7 +44,7 @@ CREATE TABLE #SponsorRosterLanding (
     not by the CSV header names.
 */
 BULK INSERT #SponsorRosterLanding
-FROM 'C:\SQLData\2022Legislators.csv'
+FROM 'C:\SQLData\2023Legislators.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,
@@ -207,29 +207,47 @@ END;
    Match each validated roster person to an existing Person
    sponsor when the identity can be resolved safely.
 
-   Agreed resolution rules:
+   Resolution rules:
 
-       0 exact FirstName + LastName Sponsor candidates:
-           New
+       Exact-name matching is preferred.
 
-       1 exact FirstName + LastName Sponsor candidate:
+       Accent-insensitive matching is used only to identify
+       possible existing Sponsors when spelling differs only
+       by diacritics (for example Garcia / García).
+
+       Accent-insensitive-only matches are NEVER resolved
+       automatically. They require human review through
+       SponsorRosterResolution.
+
+       0 candidates:
+           New, unless multiple incoming people share the
+           same exact name.
+
+       1 exact-name candidate:
            Existing, unless available supporting evidence
            contradicts the match.
 
-       2+ exact FirstName + LastName Sponsor candidates:
-           Use supporting evidence (such as NameInitial and
-           PreferredEmail) to attempt an unambiguous resolution.
+       1 accent-insensitive-only candidate:
+           NeedsReview.
+
+       2+ exact-name candidates:
+           Use supporting evidence to attempt an unambiguous
+           resolution.
 
            If one candidate can be identified safely:
                Existing
 
            If identity remains ambiguous:
-               NeedsReview and STOP the load.
+               NeedsReview
 
        Any contradictory evidence that makes identity uncertain:
-           NeedsReview and STOP the load.
+           NeedsReview
+
+       A SponsorRosterResolution entered after human review
+       overrides unresolved automated matching.
 
    Robustness boundary:
+
        The process does not need to automatically solve every
        identity edge case. It must detect uncertainty and refuse
        to guess.
@@ -237,16 +255,7 @@ END;
    No persistent data is changed in this section.
    ============================================================ */
 
-/*
-    Working table for one resolution result per roster person.
 
-    CandidateCount records the number of existing Person sponsors
-    that match the roster person's exact FirstName + LastName.
-
-    NOTE: The SQL that populates this table under the new rules
-    has not been written yet. This is the current development
-    checkpoint.
-*/
 CREATE TABLE #SponsorResolution (
     FirstName nvarchar(100) NOT NULL,
     LastName nvarchar(100) NOT NULL,
@@ -260,63 +269,14 @@ CREATE TABLE #SponsorResolution (
 
 /* ============================================================
    PHASE 3: RESOLVE SPONSOR IDENTITY
-   ============================================================
-
-   Identity-resolution rules:
-
-   1. FirstName + LastName establishes the pool of possible
-      existing Person sponsors.
-
-   2. Evidence is interpreted as follows:
-
-      NameInitial
-        - same non-NULL value: supporting
-        - different non-NULL value: review required
-        - missing value: neutral
-
-      OfficeType
-        - same value: supporting
-        - different value: review required
-
-      District
-        - same value: supporting
-        - different value: review required
-
-      StartYear
-        - same non-NULL value: supporting
-        - different non-NULL value: review required
-        - missing value: neutral
-
-      PreferredEmail
-        - same non-NULL value: supporting
-        - different value: neutral
-        - missing value: neutral
-
-   3. One existing exact-name candidate:
-        - resolve automatically only when no review-worthy
-          historical evidence conflicts with the incoming row.
-
-   4. Multiple existing exact-name candidates:
-        - resolve only when positive evidence uniquely identifies
-          one candidate.
-        - otherwise NeedsReview.
-
-   5. No existing exact-name candidate:
-        - one incoming person with that name = New
-        - multiple incoming people with that name = NeedsReview
-
-   NeedsReview does not mean the records are different people.
-   It means the automated process does not have enough evidence
-   to make the identity decision safely.
    ============================================================ */
-
 
 WITH IncomingNameCounts AS (
     /*
         Detect duplicate exact names within the incoming roster.
 
         This matters when no existing Sponsor is available:
-        the current 5A/5B process cannot safely create and reconnect
+        the current process cannot safely create and reconnect
         multiple new Sponsors having the same exact name.
     */
     SELECT
@@ -331,23 +291,49 @@ WITH IncomingNameCounts AS (
 
 CandidateMatches AS (
     /*
-        Count existing Person sponsors having the same exact
-        FirstName + LastName as each incoming roster person.
+        Build the pool of possible existing Person sponsors.
+
+        Matching is accent-insensitive so that spelling changes
+        involving diacritics can be detected. For example:
+
+            Garcia / García
+            Martinez / Martínez
+
+        ExactCandidateCount separately records whether the
+        incoming name is an exact stored-name match.
+
+        An accent-insensitive-only match is a candidate for
+        human review, NOT sufficient evidence for automatic
+        identity resolution.
 
         CandidateSponsorID is useful only when CandidateCount = 1.
-        MAX(SponsorID) does NOT resolve identity when more than
+        MAX(SponsorID) does not resolve identity when more than
         one candidate exists.
     */
     SELECT
         L.FirstName,
         L.LastName,
         COUNT(S.SponsorID) AS CandidateCount,
-        MAX(S.SponsorID) AS CandidateSponsorID
+        MAX(S.SponsorID) AS CandidateSponsorID,
+
+        SUM(
+            CASE
+                WHEN L.FirstName = S.GivenName
+                 AND L.LastName = S.LastName
+                    THEN 1
+                ELSE 0
+            END
+        ) AS ExactCandidateCount
+
     FROM #SponsorRosterLanding AS L
+
     LEFT JOIN CapitalOutlay.Sponsor AS S
-        ON L.FirstName = S.GivenName
-        AND L.LastName = S.LastName
-        AND S.SponsorType = 'Person'
+        ON L.FirstName COLLATE Latin1_General_100_CI_AI
+             = S.GivenName COLLATE Latin1_General_100_CI_AI
+       AND L.LastName COLLATE Latin1_General_100_CI_AI
+             = S.LastName COLLATE Latin1_General_100_CI_AI
+       AND S.SponsorType = 'Person'
+
     GROUP BY
         L.FirstName,
         L.LastName
@@ -355,50 +341,58 @@ CandidateMatches AS (
 
 SingleCandidateReview AS (
     /*
-        For an exact name having one existing Sponsor candidate,
-        determine whether historical service evidence contains a
-        review-worthy change.
+        For an exact-name match having one existing Sponsor
+        candidate, determine whether historical service evidence
+        contains a review-worthy change.
 
-        PreferredEmail is deliberately NOT treated as contradictory.
-        The real roster data demonstrated that this contact value can
-        legitimately change between years.
+        Accent-insensitive-only candidates are deliberately
+        excluded here because they already require human review.
 
-        Historical evidence from the immediately preceding service
-        year is used when available so that older legitimate changes
-        do not permanently make a Sponsor unresolvable.
+        PreferredEmail is deliberately NOT treated as
+        contradictory. The roster data demonstrated that this
+        contact value can legitimately change between years.
+
+        Historical evidence from the immediately preceding
+        service year is used when available so that older
+        legitimate changes do not permanently make a Sponsor
+        unresolvable.
     */
     SELECT DISTINCT
-    L.FirstName,
-    L.LastName,
-    C.CandidateSponsorID AS SponsorID
-FROM #SponsorRosterLanding AS L
-INNER JOIN CandidateMatches AS C
-    ON L.FirstName = C.FirstName
-    AND L.LastName = C.LastName
-    AND C.CandidateCount = 1
-WHERE EXISTS (
-    SELECT 1
-    FROM CapitalOutlay.SponsorService AS SS
-    WHERE SS.SponsorID = C.CandidateSponsorID
-      AND SS.ServiceYear = @ServiceYear - 1
-      AND (
-            (
-                SS.NameInitial IS NOT NULL
-                AND L.NameInitial IS NOT NULL
-                AND SS.NameInitial <> L.NameInitial
-            )
-            OR
-            SS.OfficeType <> L.Title
-            OR
-            SS.District <> TRY_CONVERT(smallint, L.District)
-          )
-)
+        L.FirstName,
+        L.LastName,
+        C.CandidateSponsorID AS SponsorID
+
+    FROM #SponsorRosterLanding AS L
+
+    INNER JOIN CandidateMatches AS C
+        ON L.FirstName = C.FirstName
+       AND L.LastName = C.LastName
+       AND C.CandidateCount = 1
+       AND C.ExactCandidateCount = 1
+
+    WHERE EXISTS (
+        SELECT 1
+        FROM CapitalOutlay.SponsorService AS SS
+        WHERE SS.SponsorID = C.CandidateSponsorID
+          AND SS.ServiceYear = @ServiceYear - 1
+          AND (
+                (
+                    SS.NameInitial IS NOT NULL
+                    AND L.NameInitial IS NOT NULL
+                    AND SS.NameInitial <> L.NameInitial
+                )
+                OR
+                SS.OfficeType <> L.Title
+                OR
+                SS.District <> TRY_CONVERT(smallint, L.District)
+              )
+    )
 ),
 
 SupportedCandidates AS (
     /*
-        This CTE is used only when multiple existing Sponsors have
-        the same exact FirstName + LastName.
+        This CTE is used only when multiple EXACT-NAME existing
+        Sponsors are candidates.
 
         Positive evidence may distinguish one candidate:
             - matching NameInitial
@@ -415,8 +409,11 @@ SupportedCandidates AS (
 
         A changed PreferredEmail is neutral, not contradictory.
 
-        A candidate must have at least one piece of positive evidence
-        and no review-worthy conflicting evidence.
+        A candidate must have at least one piece of positive
+        evidence and no review-worthy conflicting evidence.
+
+        Accent-insensitive-only candidates are deliberately not
+        automatically resolved through this CTE.
     */
     SELECT
         L.FirstName,
@@ -425,15 +422,20 @@ SupportedCandidates AS (
         L.PreferredEmail,
         COUNT(DISTINCT S.SponsorID) AS SupportedCandidateCount,
         MAX(S.SponsorID) AS SupportedSponsorID
+
     FROM #SponsorRosterLanding AS L
+
     INNER JOIN CapitalOutlay.Sponsor AS S
         ON L.FirstName = S.GivenName
-        AND L.LastName = S.LastName
-        AND S.SponsorType = 'Person'
+       AND L.LastName = S.LastName
+       AND S.SponsorType = 'Person'
+
     INNER JOIN CandidateMatches AS C
         ON L.FirstName = C.FirstName
-        AND L.LastName = C.LastName
-        AND C.CandidateCount > 1
+       AND L.LastName = C.LastName
+       AND C.CandidateCount > 1
+       AND C.ExactCandidateCount > 1
+
     WHERE
         EXISTS (
             SELECT 1
@@ -496,6 +498,7 @@ SupportedCandidates AS (
                     )
                   )
         )
+
     GROUP BY
         L.FirstName,
         L.LastName,
@@ -512,6 +515,7 @@ INSERT INTO #SponsorResolution (
     ResolutionStatus,
     CandidateCount
 )
+
 SELECT
     L.FirstName,
     L.LastName,
@@ -519,68 +523,91 @@ SELECT
     L.PreferredEmail,
 
     CASE
-    /* One safe existing candidate */
-    WHEN C.CandidateCount = 1
-         AND SCR.SponsorID IS NULL
-        THEN C.CandidateSponsorID
+        /*
+            One safe EXACT-NAME existing candidate.
+        */
+        WHEN C.CandidateCount = 1
+             AND C.ExactCandidateCount = 1
+             AND SCR.SponsorID IS NULL
+            THEN C.CandidateSponsorID
 
-    /* Multiple candidates, but evidence identifies exactly one */
-    WHEN C.CandidateCount > 1
-         AND M.SupportedCandidateCount = 1
-        THEN M.SupportedSponsorID
+        /*
+            Multiple exact-name candidates, but supporting
+            evidence identifies exactly one.
+        */
+        WHEN C.CandidateCount > 1
+             AND C.ExactCandidateCount > 1
+             AND M.SupportedCandidateCount = 1
+            THEN M.SupportedSponsorID
 
-    /* Automatic resolution could not decide, but a human has approved the match */
-    WHEN SRR.ApprovedSponsorID IS NOT NULL
-        THEN SRR.ApprovedSponsorID
+        /*
+            Automatic resolution could not safely decide,
+            but a human has approved the match.
+        */
+        WHEN SRR.ApprovedSponsorID IS NOT NULL
+            THEN SRR.ApprovedSponsorID
 
-    ELSE NULL
-END AS SponsorID,
+        ELSE NULL
+    END AS SponsorID,
 
-CASE
-    /*
-        Nobody with this name exists yet, and this is the only
-        incoming person with the name.
-    */
-    WHEN C.CandidateCount = 0
-         AND INC.IncomingNameCount = 1
-        THEN 'New'
+    CASE
+        /*
+            Nobody with this name, including accent-insensitive
+            equivalents, exists yet and this is the only incoming
+            person with the exact incoming name.
+        */
+        WHEN C.CandidateCount = 0
+             AND INC.IncomingNameCount = 1
+            THEN 'New'
 
-    /*
-        Multiple new people with the same exact name cannot
-        safely be created/reconnected by the current process.
-    */
-    WHEN C.CandidateCount = 0
-         AND INC.IncomingNameCount > 1
-         AND SRR.ApprovedSponsorID IS NULL
-        THEN 'NeedsReview'
+        /*
+            Multiple new incoming people with the same exact
+            name cannot safely be created/reconnected.
+        */
+        WHEN C.CandidateCount = 0
+             AND INC.IncomingNameCount > 1
+             AND SRR.ApprovedSponsorID IS NULL
+            THEN 'NeedsReview'
 
-    /*
-        One existing candidate with no review-worthy conflict.
-    */
-    WHEN C.CandidateCount = 1
-         AND SCR.SponsorID IS NULL
-        THEN 'Existing'
+        /*
+            One existing EXACT-NAME candidate with no
+            review-worthy conflict.
+        */
+        WHEN C.CandidateCount = 1
+             AND C.ExactCandidateCount = 1
+             AND SCR.SponsorID IS NULL
+            THEN 'Existing'
 
-    /*
-        Multiple candidates where exactly one is uniquely
-        supported.
-    */
-    WHEN C.CandidateCount > 1
-         AND M.SupportedCandidateCount = 1
-        THEN 'Existing'
+        /*
+            Multiple exact-name candidates where exactly one
+            is uniquely supported.
+        */
+        WHEN C.CandidateCount > 1
+             AND C.ExactCandidateCount > 1
+             AND M.SupportedCandidateCount = 1
+            THEN 'Existing'
 
-    /*
-        Automatic resolution could not decide, but a human
-        has approved the match.
-    */
-    WHEN SRR.ApprovedSponsorID IS NOT NULL
-        THEN 'Existing'
+        /*
+            Automatic resolution could not safely decide,
+            but a human has approved the match.
 
-    /*
-        Anything the rules above cannot safely resolve.
-    */
-    ELSE 'NeedsReview'
-END AS ResolutionStatus,
+            This includes approved accent-insensitive matches.
+        */
+        WHEN SRR.ApprovedSponsorID IS NOT NULL
+            THEN 'Existing'
+
+        /*
+            This includes accent-insensitive-only matches.
+
+            Example:
+                incoming García
+                existing Garcia
+
+            The process recognizes the possible match but
+            refuses to establish identity without human review.
+        */
+        ELSE 'NeedsReview'
+    END AS ResolutionStatus,
 
     C.CandidateCount
 
@@ -588,49 +615,54 @@ FROM #SponsorRosterLanding AS L
 
 INNER JOIN IncomingNameCounts AS INC
     ON L.FirstName = INC.FirstName
-    AND L.LastName = INC.LastName
+   AND L.LastName = INC.LastName
 
 LEFT JOIN CandidateMatches AS C
     ON L.FirstName = C.FirstName
-    AND L.LastName = C.LastName
+   AND L.LastName = C.LastName
 
 LEFT JOIN SingleCandidateReview AS SCR
     ON L.FirstName = SCR.FirstName
-    AND L.LastName = SCR.LastName
+   AND L.LastName = SCR.LastName
 
 LEFT JOIN SupportedCandidates AS M
     ON L.FirstName = M.FirstName
-    AND L.LastName = M.LastName
-    AND (
+   AND L.LastName = M.LastName
+   AND (
         L.NameInitial = M.NameInitial
         OR (L.NameInitial IS NULL AND M.NameInitial IS NULL)
-    )
-    AND (
+   )
+   AND (
         L.PreferredEmail = M.PreferredEmail
         OR (L.PreferredEmail IS NULL AND M.PreferredEmail IS NULL)
-    )
+   )
 
 LEFT JOIN CapitalOutlay.SponsorRosterResolution AS SRR
     ON SRR.ServiceYear = @ServiceYear
-    AND SRR.GivenName = L.FirstName
-    AND SRR.LastName = L.LastName
-    AND (
+   AND SRR.GivenName = L.FirstName
+   AND SRR.LastName = L.LastName
+   AND (
         SRR.NameInitial = L.NameInitial
         OR (SRR.NameInitial IS NULL AND L.NameInitial IS NULL)
-    )
-    AND SRR.OfficeType =
+   )
+   AND SRR.OfficeType =
         CASE
-            WHEN L.Title = 'Senator' THEN 'Senator'
-            WHEN L.Title = 'Representative' THEN 'Representative'
+            WHEN L.Title = 'Senator'
+                THEN 'Senator'
+            WHEN L.Title = 'Representative'
+                THEN 'Representative'
         END
-    AND SRR.District = TRY_CONVERT(smallint, L.District);
+   AND SRR.District = TRY_CONVERT(smallint, L.District);
 
 
-/* Review the resolution results before the Phase 4 gate. */
+/* ------------------------------------------------------------
+   Review the resolution results before the Phase 4 gate.
+   ------------------------------------------------------------ */
 
 SELECT *
 FROM #SponsorResolution
 ORDER BY LastName, FirstName;
+
 
 SELECT
     ResolutionStatus,
@@ -643,7 +675,6 @@ GROUP BY
 ORDER BY
     ResolutionStatus,
     CandidateCount;
-
 
   /* ============================================================
    PHASE 4: ENSURE EVERY ROSTER ROW IS PROCESSABLE

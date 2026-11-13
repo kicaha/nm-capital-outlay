@@ -33,7 +33,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @LegislativeYear smallint = 2022;
+DECLARE @LegislativeYear smallint = 2023;
 
 /* ============================================================
    0. CLEAR INTERMEDIATE TABLES
@@ -59,6 +59,7 @@ DECLARE @LegislativeYear smallint = 2022;
     ValidationIssue must be deleted first because it references
     HeldAppropriation.
 */
+TRUNCATE TABLE Staging.Appropriation;
 
 DELETE VI
 FROM Staging.ValidationIssue AS VI
@@ -99,7 +100,7 @@ CREATE TABLE #AppropriationLanding (
     not by the CSV header names.
 */
 BULK INSERT #AppropriationLanding
-FROM 'C:\SQLData\SB212_2022_Statewide_appropriations.csv'
+FROM 'C:\SQLData\HB505_2023_Statewide_appropriations.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,

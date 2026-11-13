@@ -6,7 +6,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @LegislativeYear smallint = 2022;
+DECLARE @LegislativeYear smallint = 2023;
 
 /* ============================================================
    0. CLEAR INTERMEDIATE TABLES
@@ -32,6 +32,7 @@ DECLARE @LegislativeYear smallint = 2022;
     ValidationIssue must be deleted first because it references
     HeldProject.
 */
+TRUNCATE TABLE Staging.Project;
 
 DELETE VI
 FROM Staging.ValidationIssue AS VI
@@ -79,7 +80,7 @@ CREATE TABLE #ProjectLanding (
     not by the CSV header names.
 */
 BULK INSERT #ProjectLanding
-FROM 'C:\SQLData\SB212_2022_Statewide_projects.csv'
+FROM 'C:\SQLData\HB505_2023_Statewide_projects.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,

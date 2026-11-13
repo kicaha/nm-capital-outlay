@@ -1,3 +1,13 @@
+/* ============================================================
+   2023 SPONSOR ROSTER RESOLUTIONS
+   ============================================================ */
+
+
+/* Antonio Maestas
+   Existing Sponsor changed from Representative District 16
+   to Senator District 26.
+*/
+
 INSERT INTO CapitalOutlay.SponsorRosterResolution (
     ServiceYear,
     GivenName,
@@ -10,29 +20,77 @@ INSERT INTO CapitalOutlay.SponsorRosterResolution (
     ApprovedDate,
     ResolutionNote
 )
-VALUES
-(
-    2025, 'Candy Spence', 'Ezzell', NULL, 'Senator', 32,
-    15, 'Kim', CAST(GETDATE() AS date),
-    'Verified as same person as existing SponsorID 15; Representative through 2024 and Senator beginning in 2025.'
-),
-(
-    2025, 'Natalie', 'Figueroa', NULL, 'Senator', 18,
-    81, 'Kim', CAST(GETDATE() AS date),
-    'Verified as same person as existing SponsorID 81; Representative through 2024 and Senator beginning in 2025.'
-),
-(
-    2025, 'Joshua A.', 'Sanchez', NULL, 'Senator', 29,
-    58, 'Kim', CAST(GETDATE() AS date),
-    'Verified as same person as existing SponsorID 58; continued Senate service in District 29 following the 2025 Senate district changes.'
-),
-(
-    2025, 'Larry R.', 'Scott', NULL, 'Senator', 42,
-    65, 'Kim', CAST(GETDATE() AS date),
-    'Verified as same person as existing SponsorID 65; Representative through 2024 and Senator beginning in 2025.'
-),
-(
-    2025, 'James G.', 'Townsend', NULL, 'Senator', 34,
-    49, 'Kim', CAST(GETDATE() AS date),
-    'Verified as same person as existing SponsorID 49; Representative through 2024 and Senator beginning in 2025.'
+VALUES (
+    2023,
+    'Antonio',
+    'Maestas',
+    NULL,
+    'Senator',
+    26,
+    7,
+    'Kim',
+    CAST(GETDATE() AS date),
+    'Verified as same person as existing SponsorID 7; Representative District 16 through 2022 and Senator District 26 beginning in 2023.'
+);
+
+
+/* Miguel P. García
+   Incoming roster spelling adds the accent to García.
+   Existing canonical Sponsor uses Garcia.
+*/
+
+INSERT INTO CapitalOutlay.SponsorRosterResolution (
+    ServiceYear,
+    GivenName,
+    LastName,
+    NameInitial,
+    OfficeType,
+    District,
+    ApprovedSponsorID,
+    ApprovedBy,
+    ApprovedDate,
+    ResolutionNote
+)
+VALUES (
+    2023,
+    'Miguel P.',
+    N'García',
+    'MP',
+    'Representative',
+    14,
+    78,
+    'Kim',
+    CAST(GETDATE() AS date),
+    'Verified as same person as existing SponsorID 78; incoming 2023 roster uses García while existing canonical Sponsor uses Garcia.'
+);
+
+
+/* George K. Muñoz
+   Incoming roster spelling adds the accent to Muñoz.
+   Existing canonical Sponsor uses Munoz.
+*/
+
+INSERT INTO CapitalOutlay.SponsorRosterResolution (
+    ServiceYear,
+    GivenName,
+    LastName,
+    NameInitial,
+    OfficeType,
+    District,
+    ApprovedSponsorID,
+    ApprovedBy,
+    ApprovedDate,
+    ResolutionNote
+)
+VALUES (
+    2023,
+    'George K.',
+    N'Muñoz',
+    NULL,
+    'Senator',
+    4,
+    39,
+    'Kim',
+    CAST(GETDATE() AS date),
+    'Verified as same person as existing SponsorID 39; incoming 2023 roster uses Muñoz while existing canonical Sponsor uses Munoz.'
 );
