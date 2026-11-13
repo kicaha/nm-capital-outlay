@@ -6,7 +6,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @LegislativeYear smallint = 2025;
+DECLARE @LegislativeYear smallint = 2026;
 
 /* ============================================================
    0. CLEAR INTERMEDIATE TABLES
@@ -80,7 +80,7 @@ CREATE TABLE #ProjectLanding (
     not by the CSV header names.
 */
 BULK INSERT #ProjectLanding
-FROM 'C:\SQLData\HB450_2025_Statewide_projects.csv'
+FROM 'C:\SQLData\SB240_2026_Statewide_projects.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,

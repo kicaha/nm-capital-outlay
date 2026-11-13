@@ -20,7 +20,7 @@ GO
    1. INPUT VALUES
    ============================================================ */
 
-DECLARE @ServiceYear smallint = 2025;
+DECLARE @ServiceYear smallint = 2026;
 DECLARE @GivenName nvarchar(100) = N'Michelle';
 DECLARE @LastName nvarchar(100) = N'Lujan Grisham';
 DECLARE @DisplayName nvarchar(200) = N'Michelle Lujan Grisham';
