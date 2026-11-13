@@ -6,7 +6,7 @@
 
 USE NMCapitalOutlay;
 
-DECLARE @ServiceYear smallint = 2024;
+DECLARE @ServiceYear smallint = 2025;
 
 
 /* ============================================================
@@ -44,7 +44,7 @@ CREATE TABLE #SponsorRosterLanding (
     not by the CSV header names.
 */
 BULK INSERT #SponsorRosterLanding
-FROM 'C:\SQLData\2024Legislators.csv'
+FROM 'C:\SQLData\2025Legislators.csv'
 WITH (
     FORMAT = 'CSV',
     FIRSTROW = 2,
@@ -639,8 +639,10 @@ LEFT JOIN SupportedCandidates AS M
 
 LEFT JOIN CapitalOutlay.SponsorRosterResolution AS SRR
     ON SRR.ServiceYear = @ServiceYear
-   AND SRR.GivenName = L.FirstName
-   AND SRR.LastName = L.LastName
+    AND SRR.GivenName COLLATE Latin1_General_100_CI_AI
+    = L.FirstName COLLATE Latin1_General_100_CI_AI
+    AND SRR.LastName COLLATE Latin1_General_100_CI_AI
+    = L.LastName COLLATE Latin1_General_100_CI_AI
    AND (
         SRR.NameInitial = L.NameInitial
         OR (SRR.NameInitial IS NULL AND L.NameInitial IS NULL)
