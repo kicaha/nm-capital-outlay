@@ -8,14 +8,16 @@ This is a practical learning project developed to strengthen my SQL, relational 
 
 ## Project Scope
 
-Initial scope:
+The project currently includes:
 
-- Legislative years 2021–2026
-- Projects associated with Las Cruces, New Mexico
-- Sponsor-level appropriations
-- Project, agency, fund, and legislative-service data
-- SQL Server for storage, normalization, and validation
-- Power BI for analysis and visualization
+- Statewide New Mexico capital outlay data for legislative years 2021–2026
+- Legislative projects and their associated appropriations
+- Sponsor identity and legislative-service history across multiple years
+- Resolution of source-name variations, including abbreviations, diacritics, and historically ambiguous sponsor names
+- Project, agency, fund, and geographic information available in the source data
+- Repeatable annual staging, loading, remediation, and validation processes
+- SQL Server for relational storage, normalization, data-quality controls, and validation
+- Power BI for planned analysis and visualization
 
 ## Project Goals
 
@@ -38,7 +40,7 @@ The original source files are kept locally and are not stored in this repository
 
 ## Repository Structure
 
-```text
+```text id="0zh31a"
 data/
     raw/          Local source files; not tracked in Git
     processed/    Generated/intermediate data; not tracked in Git
@@ -48,3 +50,4 @@ docs/             Data model, data dictionary, and project documentation
 powerbi/          Power BI documentation and related assets
 
 sql/              SQL Server database, staging, loading, and validation scripts
+```
