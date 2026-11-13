@@ -4,6 +4,8 @@ This project analyzes New Mexico capital outlay appropriations using SQL Server 
 
 The goal is to transform semi-structured annual capital outlay reports into a normalized relational database that supports repeatable validation, analysis, and reporting.
 
+This is a practical learning project developed to strengthen my SQL, relational database design, and data-analysis skills. ChatGPT was used as a coding and learning assistant throughout development, particularly for SQL patterns and implementation beyond my current independent coding ability. I directed the project design, data-modeling decisions, validation, troubleshooting, and interpretation of results, while reviewing and testing AI-assisted code before incorporating it into the project.
+
 ## Project Scope
 
 Initial scope:
