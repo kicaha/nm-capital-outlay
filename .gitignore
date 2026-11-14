@@ -12,3 +12,6 @@ data/processed/*
 # Windows
 Thumbs.db
 Desktop.ini
+
+# Visual Studio local workspace/cache files
+.vs/
