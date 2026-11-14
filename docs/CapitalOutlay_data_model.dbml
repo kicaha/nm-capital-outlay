@@ -1,0 +1,97 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+Project NMCapitalOutlay {
+    database_type: 'SQL Server'
+    Note: 'New Mexico Capital Outlay projects and appropriations by sponsor based on data from nmlegis.gov'
+}
+
+Table CapitalOutlay.Agency {
+    AgencyID int [pk, not null, increment]
+    AgencyCode varchar(10) [not null, unique]
+    AgencyName nvarchar(100)
+}
+
+Table CapitalOutlay.Fund {
+    FundID int [pk, not null, increment]
+    FundCode varchar(10) [not null, unique]
+    FundName nvarchar(100)
+}
+
+Table CapitalOutlay.LegislativeProject {
+    LegislativeProjectID int [pk, not null, increment]
+    ProjectTitle nvarchar(255) [not null]
+    LegislativeYear smallint [not null]
+    Bill varchar(10) [not null]
+    WebID int [not null]
+    ChapterSection varchar(50)
+    CityLocale nvarchar(50)
+    County nvarchar(50)
+    StatusFlag varchar(10)
+    ProjectTotalAfterVetoes int
+    FundID int
+    AgencyID int
+  indexes {
+    (LegislativeYear, Bill, WebID) [unique]
+  }
+}
+
+Table CapitalOutlay.Appropriation {
+    AppropriationID int [pk, not null, increment]
+    LegislativeProjectID int [not null]
+    SponsorID int
+    SourceSponsorLabel nvarchar(100)
+    Amount int [not null]
+}
+
+Table CapitalOutlay.Sponsor {
+    SponsorID int [pk, not null, increment]
+    GivenName nvarchar(100)
+    LastName nvarchar(100)
+    SponsorType varchar(20) [not null]
+    DisplayName nvarchar(200) [not null]
+}
+
+Table CapitalOutlay.SponsorService {
+    ServiceID int [pk, not null, increment]
+    SponsorID int [not null]
+    ServiceYear smallint [not null]
+    OfficeType varchar(25) [not null]
+    Party varchar(25)
+    District smallint
+    NameInitial nvarchar(20)
+    StartYear smallint
+    PreferredEmail varchar(255)
+}
+
+Table CapitalOutlay.SponsorAlias {
+    SponsorAliasID int [pk, not null, increment]
+    SourceSponsorLabel nvarchar(100) [not null, unique]
+    SponsorID int [not null]
+    IsAutoResolvable bit [not null]
+}
+
+Table CapitalOutlay.SponsorRosterResolution {
+    ResolutionID int [pk, not null, increment]
+    ServiceYear smallint [not null]
+    GivenName nvarchar(100) [not null]
+    LastName nvarchar(100) [not null]
+    NameInitial nvarchar(20)
+    OfficeType varchar(25)
+    District smallint [not null]
+    ApprovedSponsorID int [not null]
+    ApprovedBy nvarchar(100) [not null]
+    ApprovedDate date [not null]
+    ResolutionNote nvarchar(255) [not null]
+  indexes {
+    (ServiceYear, GivenName, LastName, NameInitial, OfficeType, District) [unique]
+  }
+}
+
+Ref: CapitalOutlay.LegislativeProject.AgencyID >? CapitalOutlay.Agency.AgencyID
+Ref: CapitalOutlay.LegislativeProject.FundID >? CapitalOutlay.Fund.FundID
+Ref: CapitalOutlay.Appropriation.LegislativeProjectID > CapitalOutlay.LegislativeProject.LegislativeProjectID
+Ref: CapitalOutlay.Appropriation.SponsorID >? CapitalOutlay.Sponsor.SponsorID
+Ref: CapitalOutlay.Sponsor.SponsorID < CapitalOutlay.SponsorService.SponsorID
+Ref: CapitalOutlay.Sponsor.SponsorID < CapitalOutlay.SponsorAlias.SponsorID
+Ref: CapitalOutlay.Sponsor.SponsorID < CapitalOutlay.SponsorRosterResolution.ApprovedSponsorID
